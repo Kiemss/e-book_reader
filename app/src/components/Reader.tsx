@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
+﻿import { useEffect, useRef, useState } from 'react'
 import ePub, { Book as EPubBook, Rendition } from 'epubjs'
 import type { Book } from '../types'
 import { useBookStore } from '../store/bookStore'
-import { ArrowLeft, ChevronLeft, ChevronRight, Menu, Settings, Sun, Moon, Coffee, Type } from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, Menu, Settings, Sun, Moon, Coffee, Type, Maximize, Minimize } from 'lucide-react'
 
 interface ReaderProps {
   book: Book;
@@ -23,6 +23,12 @@ const THEMES = {
 }
 type ThemeKey = keyof typeof THEMES;
 
+const FONTS = [
+  { name: 'System Default', value: 'system-ui, sans-serif' },
+  { name: 'Serif', value: 'Georgia, serif' },
+  { name: 'Monospace', value: 'Consolas, monospace' }
+]
+
 export function Reader({ book: currentBook, onBack }: ReaderProps) {
   const viewerRef = useRef<HTMLDivElement>(null)
   const bookRef = useRef<EPubBook | null>(null)
@@ -34,7 +40,55 @@ export function Reader({ book: currentBook, onBack }: ReaderProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [fontSize, setFontSize] = useState(100)
+  const [lineHeight, setLineHeight] = useState(1.5)
+  const [fontFamily, setFontFamily] = useState(FONTS[0].value)
   const [currentTheme, setCurrentTheme] = useState<ThemeKey>('sepia')
+
+  // Phase 5: Immersion & Progress
+  const [isIdle, setIsIdle] = useState(false)
+  const [isFullscreen, setIsFullscreen] = useState(false)
+  const [progress, setProgress] = useState(0)
+  const [isLocationsReady, setIsLocationsReady] = useState(false)
+  const idleTimerRef = useRef<NodeJS.Timeout | null>(null)
+
+  // Auto-hide UI on idle
+  useEffect(() => {
+    const resetIdleTimer = () => {
+      setIsIdle(false)
+      if (idleTimerRef.current) clearTimeout(idleTimerRef.current)
+      idleTimerRef.current = setTimeout(() => {
+        if (!isSidebarOpen && !isSettingsOpen) {
+          setIsIdle(true)
+        }
+      }, 3000)
+    }
+
+    document.addEventListener('mousemove', resetIdleTimer)
+    document.addEventListener('keydown', resetIdleTimer)
+    resetIdleTimer() // initial call
+    return () => {
+      document.removeEventListener('mousemove', resetIdleTimer)
+      document.removeEventListener('keydown', resetIdleTimer)
+      if (idleTimerRef.current) clearTimeout(idleTimerRef.current)
+    }
+  }, [isSidebarOpen, isSettingsOpen])
+
+  // Fullscreen tracking
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement)
+    }
+    document.addEventListener('fullscreenchange', handleFullscreenChange)
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange)
+  }, [])
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(err => console.error(err))
+    } else {
+      document.exitFullscreen()
+    }
+  }
 
   useEffect(() => {
     let isMounted = true
@@ -54,6 +108,11 @@ export function Reader({ book: currentBook, onBack }: ReaderProps) {
 
         await epubBook.ready
 
+        // Generate locations for progress bar
+        epubBook.locations.generate(1600).then(() => {
+          if (isMounted) setIsLocationsReady(true)
+        }).catch(err => console.error("Error generating locations:", err))
+
         if (viewerRef.current) {
           const rendition = epubBook.renderTo(viewerRef.current, {
             width: '100%',
@@ -68,7 +127,9 @@ export function Reader({ book: currentBook, onBack }: ReaderProps) {
           rendition.themes.register('sepia', { body: THEMES.sepia });
           rendition.themes.register('dark', { body: THEMES.dark });
           rendition.themes.select(currentTheme);
-          rendition.themes.fontSize(`${fontSize}%`);
+          rendition.themes.fontSize(fontSize + "%");
+          rendition.themes.override('line-height', lineHeight.toString());
+          rendition.themes.override('font-family', fontFamily);
 
           // Move to last reading pos or start
           if (currentBook.lastReadCfi) {
@@ -79,8 +140,12 @@ export function Reader({ book: currentBook, onBack }: ReaderProps) {
 
           // Track progress
           rendition.on('relocated', (location: any) => {
-            if (isMounted) {
-              updateBookProgress(currentBook.id, location.start.cfi)
+            if (!isMounted) return;
+            updateBookProgress(currentBook.id, location.start.cfi)
+
+            if (epubBook.locations.length() > 0) {
+              const pct = epubBook.locations.percentageFromCfi(location.start.cfi)
+              setProgress(pct * 100)
             }
           })
 
@@ -92,16 +157,74 @@ export function Reader({ book: currentBook, onBack }: ReaderProps) {
           })
         }
 
-        // Key bindings for navigation
-        const handleKeyUp = (e: KeyboardEvent) => {
-          if (e.key === 'ArrowLeft') renditionRef.current?.prev()
-          if (e.key === 'ArrowRight') renditionRef.current?.next()
+        // Key bindings for navigation & shortcuts
+        const handleKeyUp = (e: KeyboardEvent | Event) => {
+          const keyboardEvent = e as KeyboardEvent;
+          // Ignore if typing in an input
+          if (['INPUT', 'TEXTAREA'].includes((keyboardEvent.target as HTMLElement).tagName)) return;
+
+          switch (keyboardEvent.key) {
+            case 'ArrowLeft':
+            case 'PageUp':
+              renditionRef.current?.prev()
+              break;
+            case 'ArrowRight':
+            case 'PageDown':
+              renditionRef.current?.next()
+              break;
+            case ' ':
+              if (keyboardEvent.shiftKey) {
+                renditionRef.current?.prev()
+              } else {
+                renditionRef.current?.next()
+              }
+              break;
+            case 'Escape':
+              if (document.fullscreenElement) {
+                document.exitFullscreen()
+              } else {
+                onBack()
+              }
+              break;
+            case 'F11':
+              keyboardEvent.preventDefault()
+              toggleFullscreen()
+              break;
+          }
         }
+        
         document.addEventListener('keyup', handleKeyUp)
         renditionRef.current?.on('keyup', handleKeyUp)
 
+        // Mouse wheel bindings for navigation
+        const handleWheel = (e: WheelEvent) => {
+          if (e.deltaY > 0) renditionRef.current?.next()
+          else if (e.deltaY < 0) renditionRef.current?.prev()
+        }
+        
+        document.addEventListener('wheel', handleWheel)
+
+        renditionRef.current?.hooks.content.register((contents: any) => {
+          const el = contents.document.documentElement;
+          if (el) {
+            el.addEventListener('wheel', (e: WheelEvent) => {
+              e.preventDefault();
+              handleWheel(e);
+            });
+            // Forward keydown to outer document
+            el.addEventListener('keyup', (e: KeyboardEvent) => {
+               handleKeyUp(e);
+            });
+            // Forward mousemove to reset idle
+            el.addEventListener('mousemove', () => {
+               document.dispatchEvent(new Event('mousemove'));
+            });
+          }
+        });
+
         return () => {
           document.removeEventListener('keyup', handleKeyUp)
+          document.removeEventListener('wheel', handleWheel)
         }
       } catch (e) {
         console.error('Reader init error:', e)
@@ -116,34 +239,29 @@ export function Reader({ book: currentBook, onBack }: ReaderProps) {
         bookRef.current.destroy()
       }
     }
-  }, [currentBook.filePath]) // 仅当文件路径变化时重载
+  }, [currentBook.filePath])
 
-  // Apply Theme changes dynamically
+  // Apply visual changes dynamically
   useEffect(() => {
     if (renditionRef.current) {
       renditionRef.current.themes.select(currentTheme)
+      renditionRef.current.themes.fontSize(fontSize + "%")
+      renditionRef.current.themes.override('line-height', lineHeight.toString())
+      renditionRef.current.themes.override('font-family', fontFamily)
     }
-  }, [currentTheme])
-
-  // Apply Font Size dynamically
-  useEffect(() => {
-    if (renditionRef.current) {
-      renditionRef.current.themes.fontSize(`${fontSize}%`)
-    }
-  }, [fontSize])
+  }, [currentTheme, fontSize, lineHeight, fontFamily])
 
   const handleTocClick = (href: string) => {
     renditionRef.current?.display(href)
-    setIsSidebarOpen(false) // 点击后自动收起侧边栏
+    setIsSidebarOpen(false)
   }
 
-  // 递归渲染目录
   const renderToc = (items: NavItem[], depth = 0) => {
     return items.map(item => (
       <div key={item.id}>
         <button
-          className={`w-full text-left py-2 px-4 hover:bg-black/5 transition text-sm ${depth > 0 ? 'text-gray-500' : 'text-gray-800 font-medium'}`}
-          style={{ paddingLeft: `${(depth + 1) * 1}rem` }}
+          className={'w-full text-left py-2 px-4 hover:bg-black/5 transition text-sm ' + (depth > 0 ? 'text-gray-600' : 'font-medium')}
+          style={{ paddingLeft: (depth * 1 + 1) + 'rem' }}
           onClick={() => handleTocClick(item.href)}
         >
           {item.label}
@@ -153,7 +271,6 @@ export function Reader({ book: currentBook, onBack }: ReaderProps) {
     ))
   }
 
-  // 计算当前阅读器外壳的背景色
   const containerBg = currentTheme === 'light' ? 'bg-white' 
                     : currentTheme === 'sepia' ? 'bg-[#FDF6E3]' 
                     : 'bg-[#18181A]'
@@ -161,16 +278,16 @@ export function Reader({ book: currentBook, onBack }: ReaderProps) {
   const isDark = currentTheme === 'dark'
 
   return (
-    <div className={`flex flex-col h-screen overflow-hidden transition-colors duration-300 ${containerBg}`}>
-      {/* Top Bar */}
-      <div className={`h-14 flex items-center justify-between px-4 shadow-sm z-20 shrink-0 select-none ${isDark ? 'bg-[#1E1E1E] border-b border-gray-800 text-gray-300' : 'bg-white border-b border-gray-200 text-gray-800'}`}>
+    <div className={'flex flex-col h-screen overflow-hidden transition-colors duration-300 ' + containerBg + (isDark ? ' text-white' : ' text-black')}>
+      {/* Top Bar (Auto-hides in Immersive Mode) */}
+      <div className={'absolute top-0 left-0 right-0 h-14 flex items-center justify-between px-4 shadow-sm z-20 shrink-0 select-none transition-all duration-500 ' + (isIdle ? ' -translate-y-full opacity-0' : ' translate-y-0 opacity-100') + (isDark ? ' bg-[#1e1e1e] border-white/10' : ' bg-white border-black/5') + ' border-b'}>
         <div className="flex items-center gap-4 w-1/3">
-          <button onClick={onBack} className="p-2 hover:bg-black/5 rounded-full transition" title="返回书架">
+          <button onClick={onBack} className="p-2 hover:bg-black/5 rounded-full transition" title="返回 (Esc)">
             <ArrowLeft size={20} />
           </button>
           <button 
             onClick={() => setIsSidebarOpen(!isSidebarOpen)} 
-            className={`p-2 hover:bg-black/5 rounded-full transition ${isSidebarOpen ? 'bg-black/5' : ''}`}
+            className={'p-2 hover:bg-black/5 rounded-full transition ' + (isSidebarOpen ? 'bg-black/5' : '')}
             title="目录"
           >
             <Menu size={20} />
@@ -179,10 +296,14 @@ export function Reader({ book: currentBook, onBack }: ReaderProps) {
 
         <span className="font-medium truncate text-center flex-1">{currentBook.title}</span>
         
-        <div className="flex items-center justify-end w-1/3 relative">
+        <div className="flex items-center justify-end w-1/3 gap-2 relative">
+          <button onClick={toggleFullscreen} className="p-2 hover:bg-black/5 rounded-full transition" title="全屏 (F11)">
+            {isFullscreen ? <Minimize size={18} /> : <Maximize size={18} />}
+          </button>
+
           <button 
             onClick={() => setIsSettingsOpen(!isSettingsOpen)}
-            className={`p-2 hover:bg-black/5 rounded-full transition ${isSettingsOpen ? 'bg-black/5' : ''}`}
+            className={'p-2 hover:bg-black/5 rounded-full transition ' + (isSettingsOpen ? 'bg-black/5' : '')}
             title="阅读设置"
           >
             <Settings size={20} />
@@ -190,43 +311,59 @@ export function Reader({ book: currentBook, onBack }: ReaderProps) {
 
           {/* Settings Dropdown */}
           {isSettingsOpen && (
-            <div className={`absolute top-12 right-0 w-64 rounded-xl shadow-xl p-4 border z-50 ${isDark ? 'bg-[#2A2A2C] border-gray-700' : 'bg-white border-gray-100'}`}>
-              <div className="mb-4">
-                <p className={`text-xs font-semibold mb-2 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>背景主题</p>
+            <div className={'absolute top-12 right-0 w-72 rounded-xl shadow-xl p-5 border z-50 flex flex-col gap-5 ' + (isDark ? 'bg-[#1e1e1e] border-white/10' : 'bg-white border-black/5')}>
+              {/* Theme Settings */}
+              <div>
+                <p className={'text-xs font-semibold mb-2 ' + (isDark ? 'text-gray-400' : 'text-gray-500')}>背景主题</p>
                 <div className="flex gap-2">
-                  <button onClick={() => setCurrentTheme('light')} className={`flex-1 py-2 rounded border flex justify-center items-center gap-1 ${currentTheme === 'light' ? 'ring-2 ring-blue-500 border-transparent' : 'border-gray-200'} bg-white text-black`}><Sun size={14}/>浅色</button>
-                  <button onClick={() => setCurrentTheme('sepia')} className={`flex-1 py-2 rounded border flex justify-center items-center gap-1 ${currentTheme === 'sepia' ? 'ring-2 ring-blue-500 border-transparent' : 'border-[#e6debc]'} bg-[#FDF6E3] text-[#433422]`}><Coffee size={14}/>护眼</button>
-                  <button onClick={() => setCurrentTheme('dark')} className={`flex-1 py-2 rounded border flex justify-center items-center gap-1 ${currentTheme === 'dark' ? 'ring-2 ring-blue-500 border-transparent' : 'border-gray-700'} bg-[#1E1E1E] text-white`}><Moon size={14}/>夜间</button>
+                  <button onClick={() => setCurrentTheme('light')} className={'flex-1 py-1.5 rounded border flex justify-center items-center gap-1 bg-white text-black ' + (currentTheme === 'light' ? 'border-primary ring-2' : '')}>浅色</button>
+                  <button onClick={() => setCurrentTheme('sepia')} className={'flex-1 py-1.5 rounded border flex justify-center items-center gap-1 bg-[#FDF6E3] text-[#433422] ' + (currentTheme === 'sepia' ? 'border-primary ring-2' : '')}>护眼</button>
+                  <button onClick={() => setCurrentTheme('dark')} className={'flex-1 py-1.5 rounded border flex justify-center items-center gap-1 bg-[#1E1E1E] text-white ' + (currentTheme === 'dark' ? 'border-primary ring-2' : '')}>夜间</button>
                 </div>
               </div>
-              <div>
-                <p className={`text-xs font-semibold mb-2 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>字体大小: {fontSize}%</p>
-                <div className="flex items-center gap-3">
-                  <button 
-                    onClick={() => setFontSize(Math.max(50, fontSize - 10))}
-                    className={`flex-1 py-1 rounded border flex justify-center items-center ${isDark ? 'border-gray-600 hover:bg-gray-700' : 'border-gray-200 hover:bg-gray-50'}`}
-                  >
-                    <Type size={14} />-
-                  </button>
-                  <button 
-                    onClick={() => setFontSize(Math.min(200, fontSize + 10))}
-                    className={`flex-1 py-1 rounded border flex justify-center items-center ${isDark ? 'border-gray-600 hover:bg-gray-700' : 'border-gray-200 hover:bg-gray-50'}`}
-                  >
-                    <Type size={18} />+
-                  </button>
+              
+              {/* Font Size & Line Height */}
+              <div className="flex gap-4">
+                <div className="flex-1">
+                  <p className={'text-xs font-semibold mb-2 ' + (isDark ? 'text-gray-400' : 'text-gray-500')}>字号 ({fontSize}%)</p>
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => setFontSize(Math.max(50, fontSize - 10))} className={'flex-1 py-1 rounded border ' + (isDark ? 'border-white/10 hover:bg-white/5' : 'hover:bg-black/5')}>-</button>
+                    <button onClick={() => setFontSize(Math.min(200, fontSize + 10))} className={'flex-1 py-1 rounded border ' + (isDark ? 'border-white/10 hover:bg-white/5' : 'hover:bg-black/5')}>+</button>
+                  </div>
                 </div>
+                <div className="flex-1">
+                  <p className={'text-xs font-semibold mb-2 ' + (isDark ? 'text-gray-400' : 'text-gray-500')}>行距</p>
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => setLineHeight(Math.max(1, lineHeight - 0.2))} className={'flex-1 py-1 rounded border ' + (isDark ? 'border-white/10 hover:bg-white/5' : 'hover:bg-black/5')}>紧</button>
+                    <button onClick={() => setLineHeight(Math.min(3, lineHeight + 0.2))} className={'flex-1 py-1 rounded border ' + (isDark ? 'border-white/10 hover:bg-white/5' : 'hover:bg-black/5')}>松</button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Font Family */}
+              <div>
+                <p className={'text-xs font-semibold mb-2 ' + (isDark ? 'text-gray-400' : 'text-gray-500')}>字体</p>
+                <select 
+                  value={fontFamily} 
+                  onChange={(e) => setFontFamily(e.target.value)}
+                  className={'w-full p-2 rounded border text-sm ' + (isDark ? 'bg-[#2a2a2a] border-white/10' : 'bg-white hover:bg-black/5')}
+                >
+                  {FONTS.map(f => (
+                    <option key={f.name} value={f.value}>{f.name}</option>
+                  ))}
+                </select>
               </div>
             </div>
           )}
         </div>
       </div>
 
-      <div className="flex-1 flex overflow-hidden relative">
+      <div className="flex-1 flex overflow-hidden relative pt-14 pb-12">
         {/* Sidebar (TOC) */}
         <div 
-          className={`absolute lg:relative z-40 h-full w-64 md:w-80 shadow-lg lg:shadow-none border-r transition-transform duration-300 flex flex-col ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:hidden lg:w-0 lg:border-0'} ${isDark ? 'bg-[#252526] border-gray-800 text-gray-300' : 'bg-gray-50 border-gray-200'}`}
+          className={'absolute lg:relative z-40 h-full w-64 md:w-80 shadow-lg lg:shadow-none border-r transition-transform duration-300 flex flex-col ' + (isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:-translate-x-full lg:hidden') + (isDark ? ' bg-[#1e1e1e] border-white/10' : ' bg-white border-black/5')}
         >
-          <div className={`p-4 border-b font-medium select-none ${isDark ? 'border-gray-800' : 'border-gray-200'}`}>目录</div>
+          <div className={'p-4 border-b font-medium select-none ' + (isDark ? 'border-white/10' : 'border-black/5')}>目录</div>
           <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-400">
             {toc.length > 0 ? (
               <div className="py-2">{renderToc(toc)}</div>
@@ -248,21 +385,44 @@ export function Reader({ book: currentBook, onBack }: ReaderProps) {
         <div className="flex-1 relative flex items-center justify-center">
           <button 
             onClick={() => renditionRef.current?.prev()}
-            className={`absolute left-4 z-10 p-2 rounded-full shadow transition hover:scale-105 ${isDark ? 'bg-gray-800/80 hover:bg-gray-700 text-gray-300' : 'bg-white/80 hover:bg-white text-gray-600'}`}
+            className={'absolute left-4 z-10 p-2 rounded-full shadow transition hover:scale-105 duration-300 ' + (isIdle ? 'opacity-0' : 'opacity-100') + (isDark ? ' bg-[#2a2a2a] text-white hover:bg-[#3a3a3a]' : ' bg-white text-black hover:bg-gray-100')}
           >
             <ChevronLeft size={32} />
           </button>
           
-          <div className="w-full h-full max-w-4xl pt-8 pb-4 px-12 md:px-20 lg:px-24">
+          <div className="w-full h-full max-w-4xl px-8 md:px-20 lg:px-24 flex items-center justify-center">
              <div className="w-full h-full" ref={viewerRef}></div>
           </div>
 
           <button 
             onClick={() => renditionRef.current?.next()}
-            className={`absolute right-4 z-10 p-2 rounded-full shadow transition hover:scale-105 ${isDark ? 'bg-gray-800/80 hover:bg-gray-700 text-gray-300' : 'bg-white/80 hover:bg-white text-gray-600'}`}
+            className={'absolute right-4 z-10 p-2 rounded-full shadow transition hover:scale-105 duration-300 ' + (isIdle ? 'opacity-0' : 'opacity-100') + (isDark ? ' bg-[#2a2a2a] text-white hover:bg-[#3a3a3a]' : ' bg-white text-black hover:bg-gray-100')}
           >
             <ChevronRight size={32} />
           </button>
+        </div>
+      </div>
+
+      {/* Bottom Progress Bar */}
+      <div className={'absolute bottom-0 left-0 right-0 h-12 px-6 flex items-center z-20 transition-all duration-500 ' + (isIdle ? ' translate-y-full opacity-0' : ' translate-y-0 opacity-100') + (isDark ? ' bg-[#1e1e1e] border-white/10' : ' bg-white border-black/5') + ' border-t'}>
+        <div className="w-full max-w-4xl mx-auto flex items-center gap-4">
+          <span className="text-xs w-12 text-right">{progress.toFixed(1)}%</span>
+          <input 
+            type="range" 
+            min="0" 
+            max="100" 
+            step="0.1" 
+            value={progress}
+            disabled={!isLocationsReady}
+            onChange={(e) => {
+              const val = parseFloat(e.target.value)
+              setProgress(val)
+              const cfi = bookRef.current?.locations.cfiFromPercentage(val / 100)
+              if (cfi) renditionRef.current?.display(cfi)
+            }}
+            className={'flex-1 h-1.5 rounded-lg appearance-none cursor-pointer ' + (isDark ? 'bg-gray-700' : 'bg-gray-200')}
+            title={isLocationsReady ? "拖动跳转" : "正在解析进度..."}
+          />
         </div>
       </div>
     </div>
