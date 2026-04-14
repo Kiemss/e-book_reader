@@ -2,6 +2,8 @@
   "name": "app",
   "private": true,
   "version": "0.0.0",
+  "description": "轻量级 Windows 电子书阅读器",
+  "author": "Kiemss",
   "main": "dist-electron/main.js",
   "type": "module",
   "scripts": {
@@ -69,10 +71,6 @@
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
       "deleteAppDataOnUninstall": false
-    },
-    "github": {
-      "owner": "Kiemss",
-      "repo": "e-book_reader"
     }
   }
 }
