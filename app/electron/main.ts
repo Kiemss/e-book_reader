@@ -31,9 +31,10 @@ app.whenReady().then(() => {
     const { canceled, filePaths } = await dialog.showOpenDialog({
       properties: ['openFile'],
       filters: [
-      { name: 'eBooks', extensions: ['epub', 'txt'] },
+      { name: 'eBooks', extensions: ['epub', 'txt', 'md'] },
       { name: 'EPUB', extensions: ['epub'] },
       { name: 'TXT', extensions: ['txt'] },
+      { name: 'Markdown', extensions: ['md'] },
     ]
     })
     

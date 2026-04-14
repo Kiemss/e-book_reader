@@ -8,6 +8,7 @@ export interface Bookmark {
 export const BookFormat = {
   EPUB: 'epub',
   TXT: 'txt',
+  MD: 'md',
 } as const
 
 export type BookFormat = typeof BookFormat[keyof typeof BookFormat]

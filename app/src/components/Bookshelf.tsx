@@ -3,7 +3,8 @@ import { BookFormat } from '../types'
 import type { Book } from '../types'
 import ePub from 'epubjs'
 import { parseTxtFile } from '../utils/txtParser'
-import { PlusCircle, Book as BookIcon, Trash2, FileText } from 'lucide-react'
+import { parseMdFile } from '../utils/mdParser'
+import { PlusCircle, Book as BookIcon, Trash2, FileText, FileCode } from 'lucide-react'
 
 export function Bookshelf({ onBookClick }: { onBookClick: (book: Book) => void }) {
   const { books, addBook, removeBook } = useBookStore()
@@ -29,10 +30,29 @@ export function Bookshelf({ onBookClick }: { onBookClick: (book: Book) => void }
         fileBuffer.byteOffset + fileBuffer.byteLength
       ) as ArrayBuffer
 
-      const isTxt = filePath.toLowerCase().endsWith('.txt')
+      const lowerPath = filePath.toLowerCase()
+      const isTxt = lowerPath.endsWith('.txt')
+      const isMd = lowerPath.endsWith('.md')
       let newBook: Book
 
-      if (isTxt) {
+      if (isMd) {
+        const uint8Array = new Uint8Array(arrayBuffer)
+        const fakeFile = new File([uint8Array], filePath.split(/[\\/]/).pop() || 'book.md', {
+          type: 'text/markdown'
+        })
+        const mdBook = await parseMdFile(fakeFile, filePath)
+
+        newBook = {
+          id: crypto.randomUUID(),
+          title: mdBook.title,
+          author: mdBook.author,
+          filePath: filePath,
+          addedDate: Date.now(),
+          format: BookFormat.MD,
+          txtProgress: { currentPage: 0, characterOffset: 0 },
+          coverImage: undefined,
+        }
+      } else if (isTxt) {
         const uint8Array = new Uint8Array(arrayBuffer)
         const fakeFile = new File([uint8Array], filePath.split(/[\\/]/).pop() || 'book.txt', {
           type: 'text/plain'
@@ -116,7 +136,12 @@ export function Bookshelf({ onBookClick }: { onBookClick: (book: Book) => void }
               onClick={() => onBookClick(book)}
             >
               <div className="aspect-[3/4] bg-gray-100 flex items-center justify-center relative">
-                {book.format === BookFormat.TXT ? (
+                {book.format === BookFormat.MD ? (
+                  <div className="text-center p-4">
+                    <FileCode size={48} className="mx-auto text-purple-400 mb-2" />
+                    <div className="text-lg font-semibold text-gray-600">MD</div>
+                  </div>
+                ) : book.format === BookFormat.TXT ? (
                   <div className="text-center p-4">
                     <FileText size={48} className="mx-auto text-blue-400 mb-2" />
                     <div className="text-lg font-semibold text-gray-600">TXT</div>

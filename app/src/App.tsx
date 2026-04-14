@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Bookshelf } from './components/Bookshelf'
 import { Reader } from './components/Reader'
 import { TextReader } from './components/TextReader'
+import { MarkdownReader } from './components/MarkdownReader'
 import { BookFormat } from './types'
 import type { Book } from './types'
 
@@ -13,6 +14,8 @@ function App() {
       {currentBook ? (
         currentBook.format === BookFormat.TXT ? (
           <TextReader book={currentBook} onBack={() => setCurrentBook(null)} />
+        ) : currentBook.format === BookFormat.MD ? (
+          <MarkdownReader book={currentBook} onBack={() => setCurrentBook(null)} />
         ) : (
           <Reader book={currentBook} onBack={() => setCurrentBook(null)} />
         )
