@@ -35,10 +35,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: List release files
-        working-directory: ./app
-        run: dir release /s /b
-
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
