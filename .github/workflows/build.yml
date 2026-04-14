@@ -20,22 +20,24 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: 'npm'
-          cache-dependency-path: app/package-lock.json
 
       - name: Install dependencies
         working-directory: ./app
         run: npm ci
 
-      - name: Build
+      - name: Build Web App
         working-directory: ./app
         run: npm run build
 
       - name: Build Electron app
         working-directory: ./app
-        run: npx electron-builder --win --x64
+        run: npx electron-builder --win --x64 --config
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: List release files
+        working-directory: ./app
+        run: dir release /s /b
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -56,10 +58,13 @@ jobs:
           name: windows-exe
           path: release
 
+      - name: List downloaded files
+        run: ls -la release/
+
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          files: release/**/*.exe
+          files: release/*.exe
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
