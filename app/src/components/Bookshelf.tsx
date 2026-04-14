@@ -40,7 +40,7 @@ export function Bookshelf({ onBookClick }: { onBookClick: (book: Book) => void }
          if (coverUrl.startsWith('blob:')) {
             const resp = await fetch(coverUrl);
             const blob = await resp.blob();
-            coverImage = await new Promise((resolve) => {
+            coverImage = await new Promise<string>((resolve) => {
               const reader = new FileReader();
               reader.onloadend = () => resolve(reader.result as string);
               reader.readAsDataURL(blob);

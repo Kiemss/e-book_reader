@@ -1,4 +1,31 @@
-﻿dist-electron
-.vite
+﻿# Dependencies
 node_modules/
 app/node_modules/
+
+# Build outputs
+dist-electron/
+.vite/
+
+# App build outputs
+app/dist/
+app/dist-ssr/
+app/release/
+
+# Logs
+*.log
+log.txtt
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.sw?
+*.suo
+
+# OS
+.DS_Store
+Thumbs.db
