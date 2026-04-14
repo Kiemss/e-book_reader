@@ -1,8 +1,20 @@
-﻿export interface Bookmark {
+export interface Bookmark {
   cfi: string;
   text: string;
   label: string;
   time: number;
+}
+
+export const BookFormat = {
+  EPUB: 'epub',
+  TXT: 'txt',
+} as const
+
+export type BookFormat = typeof BookFormat[keyof typeof BookFormat]
+
+export interface TXTProgress {
+  currentPage: number;
+  characterOffset: number;
 }
 
 export interface Book {
@@ -14,6 +26,18 @@ export interface Book {
   addedDate: number;
   filePath: string;
   bookmarks?: Bookmark[];
+  format: BookFormat;
+  txtProgress?: TXTProgress;
+}
+
+export interface TXTBook {
+  id: string;
+  title: string;
+  author: string;
+  content: string;
+  pageCount: number;
+  encoding: string;
+  filePath: string;
 }
 
 declare global {

@@ -30,7 +30,11 @@ app.whenReady().then(() => {
   ipcMain.handle('dialog:openFile', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog({
       properties: ['openFile'],
-      filters: [{ name: 'eBooks', extensions: ['epub'] }]
+      filters: [
+      { name: 'eBooks', extensions: ['epub', 'txt'] },
+      { name: 'EPUB', extensions: ['epub'] },
+      { name: 'TXT', extensions: ['txt'] },
+    ]
     })
     
     if (canceled || filePaths.length === 0) {

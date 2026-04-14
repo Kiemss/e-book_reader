@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { Bookshelf } from './components/Bookshelf'
 import { Reader } from './components/Reader'
+import { TextReader } from './components/TextReader'
+import { BookFormat } from './types'
 import type { Book } from './types'
 
 function App() {
@@ -9,7 +11,11 @@ function App() {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans">
       {currentBook ? (
-        <Reader book={currentBook} onBack={() => setCurrentBook(null)} />
+        currentBook.format === BookFormat.TXT ? (
+          <TextReader book={currentBook} onBack={() => setCurrentBook(null)} />
+        ) : (
+          <Reader book={currentBook} onBack={() => setCurrentBook(null)} />
+        )
       ) : (
         <Bookshelf onBookClick={(book) => setCurrentBook(book)} />
       )}
